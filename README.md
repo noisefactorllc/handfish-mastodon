@@ -17,8 +17,8 @@ Supports all Handfish themes.
 Load Handfish tokens, an optional theme, then tangerine-handfish:
 
 ```html
-<link rel="stylesheet" href="https://handfish.noisefactor.io/0.9.0/styles/tokens.css">
-<link rel="stylesheet" href="https://handfish.noisefactor.io/0.9.0/styles/themes/cyberpunk.css">
+<link rel="stylesheet" href="https://handfish.noisefactor.io/0/styles/tokens.css">
+<link rel="stylesheet" href="https://handfish.noisefactor.io/0/styles/themes/cyberpunk.css">
 <link rel="stylesheet" href="tangerine-handfish.css">
 ```
 
