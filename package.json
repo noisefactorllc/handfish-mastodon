@@ -26,6 +26,6 @@
     "url": "https://github.com/noisefactorllc/tangerine-handfish/issues"
   },
   "devDependencies": {
-    "esbuild": "^0.27.3"
+    "esbuild": "^0.28.0"
   }
 }
