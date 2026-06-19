@@ -27,6 +27,7 @@ const handfishStylesDir = path.join(handfishRoot, 'src', 'styles')
 const args = process.argv.slice(2)
 const isStandalone = args.includes('--standalone')
 const isMastodon = args.includes('--mastodon')
+const isMastodon46 = args.includes('--mastodon46')
 const buildAll = args.includes('--all')
 const themeIndex = args.indexOf('--theme')
 const themeName = themeIndex !== -1 ? args[themeIndex + 1] : null
@@ -400,9 +401,183 @@ USER mastodon
     console.log('  - dist/mastodon/Dockerfile')
 }
 
+// ============================================================================
+// Mastodon 4.6 token-mapping build (--mastodon46)
+//
+// 4.6 replaced the SCSS-variable theme system with CSS design tokens
+// (--color-* in app/javascript/styles/mastodon/theme/). Each Handfish theme
+// becomes a config/themes.yml entry whose entrypoint:
+//   1. @use 'application'  — pulls in Mastodon's own theme + component styles
+//   2. defines this theme's Handfish --hf-* tokens (a single palette)
+//   3. maps Mastodon --color-* semantic tokens onto --hf-* for all schemes
+//   4. applies a character layer (fonts/radius/shadow) via --hf-*
+// No TangerineUI overlay — that base is discontinued and targeted 4.5 markup.
+// ============================================================================
+
+// Mastodon 4.6 semantic token -> Handfish token reference. Applied under every
+// color-scheme selector because each Handfish theme is a single fixed palette.
+const M46_TOKEN_MAP = {
+    '--color-bg-primary': 'var(--hf-color-1)',
+    '--color-bg-secondary': 'var(--hf-color-2)',
+    '--color-bg-tertiary': 'var(--hf-color-3)',
+    '--color-bg-inverted': 'var(--hf-color-7)',
+    '--color-bg-brand-base': 'var(--hf-accent-2)',
+    '--color-bg-brand-base-hover': 'var(--hf-accent-1)',
+    '--color-bg-brand-soft': 'var(--hf-accent-1)',
+    '--color-bg-brand-softest': 'color-mix(in oklab, var(--hf-accent-1) 60%, var(--hf-color-2))',
+    '--color-bg-error-base': 'var(--hf-red)',
+    '--color-bg-success-base': 'var(--hf-green)',
+    '--color-bg-warning-base': 'var(--hf-yellow)',
+    '--color-text-primary': 'var(--hf-color-7)',
+    '--color-text-secondary': 'var(--hf-color-5)',
+    '--color-text-tertiary': 'var(--hf-color-4)',
+    '--color-text-inverted': 'var(--hf-color-1)',
+    '--color-text-brand': 'var(--hf-accent-3)',
+    '--color-text-on-brand-base': 'var(--hf-color-7)',
+    '--color-text-error': 'var(--hf-red)',
+    '--color-text-warning': 'var(--hf-yellow)',
+    '--color-text-success': 'var(--hf-green)',
+    '--color-border-primary': 'var(--hf-border-subtle)',
+    '--color-border-brand': 'var(--hf-accent-3)',
+    // High-visibility tokens that otherwise keep Mastodon's indigo/grey palette
+    '--color-text-status-links': 'var(--hf-accent-3)',
+    '--color-text-brand-soft': 'var(--hf-accent-3)',
+    '--color-border-brand-soft': 'var(--hf-accent-2)',
+    '--color-border-error': 'var(--hf-red)',
+    '--color-text-disabled': 'var(--hf-color-4)',
+    '--color-bg-disabled': 'var(--hf-color-3)',
+}
+
+// Strip the OS-driven light block so an explicit Handfish theme is deterministic
+// (matches one level of brace nesting: the @media wrapper around its :root block).
+function stripMediaLight(css) {
+    return css.replace(/@media\s*\(prefers-color-scheme:\s*light\)\s*\{(?:[^{}]|\{[^{}]*\})*\}/g, '')
+}
+
+// Assemble the Handfish --hf-* token layer for one theme: tokens.css plus the
+// theme file with its [data-theme="X"] block unwrapped to :root (applies
+// unconditionally) and other variants stripped. No TangerineUI overlay.
+function handfishLayer(theme) {
+    let tokensCSS = stripMediaLight(fs.readFileSync(path.join(handfishStylesDir, 'tokens.css'), 'utf8'))
+    if (!theme || theme === 'dark') return tokensCSS // dark = tokens.css :root default
+
+    let themePath = path.join(handfishStylesDir, 'themes', `${theme}.css`)
+    if (!fs.existsSync(themePath)) {
+        const baseName = theme.replace(/-(?:dark|light)$/, '')
+        themePath = path.join(handfishStylesDir, 'themes', `${baseName}.css`)
+    }
+    let themeCSS
+    if (fs.existsSync(themePath)) {
+        themeCSS = fs.readFileSync(themePath, 'utf8')
+    } else {
+        const m = tokensCSS.match(new RegExp(`\\[data-theme="${theme}"\\]\\s*\\{[^}]*\\}`, 's'))
+        themeCSS = m ? m[0] : ''
+    }
+    themeCSS = themeCSS.replace(`[data-theme="${theme}"]`, ':root')
+    themeCSS = themeCSS.replace(/\[data-theme="[^"]+"\]\s*\{[^}]*\}/gs, '')
+    return `${tokensCSS}\n\n${themeCSS}`
+}
+
+// Mastodon 4.6 token overrides, emitted under all color-scheme selectors so they
+// win over mastodon/theme by equal-specificity + later source order.
+function tokenMapBlock() {
+    const decls = Object.entries(M46_TOKEN_MAP).map(([k, v]) => `  ${k}: ${v};`).join('\n')
+    // Base tier: win over mastodon/theme's [data-color-scheme] rules (equal specificity, later source order).
+    const base = `:root,\nhtml:not([data-color-scheme]),\n[data-color-scheme='dark'],\n[data-color-scheme='light'] {\n${decls}\n}`
+    // Contrast tier: re-assert at [data-color-scheme][data-contrast='high'] = specificity (0,2,0) so the
+    // theme palette also wins over Mastodon's contrast-overrides mixin when the user sets Contrast=High.
+    const contrast = `[data-color-scheme='dark'][data-contrast='high'],\n[data-color-scheme='light'][data-contrast='high'],\nhtml:not([data-color-scheme])[data-contrast='high'] {\n${decls}\n}`
+    return `${base}\n\n${contrast}`
+}
+
+// Character layer: non-color Handfish identity (fonts, radius, shadow) applied to
+// stable Mastodon 4.6 surfaces via --hf-* tokens. Conservative v1 — refined with
+// visual feedback after the first CI build proves the pipeline.
+function characterLayer() {
+    return `/* Handfish character layer (v1: fonts + radius + shadow; selectors verified against Mastodon 4.6) */
+body, .app-holder, button, input, textarea, select {
+  font-family: var(--hf-font-family), system-ui, sans-serif;
+}
+.dropdown-menu, .modal-root__modal, .dialog-modal, .boost-modal,
+.actions-modal, .column-header, .compose-form, .status {
+  border-radius: var(--hf-radius);
+}
+.dropdown-menu, .modal-root__modal, .dialog-modal {
+  box-shadow: var(--hf-shadow-lg);
+}`
+}
+
+async function buildMastodon46() {
+    const outDir = path.join(distDir, 'mastodon46')
+    const stylesDir = path.join(outDir, 'styles')
+    fs.mkdirSync(stylesDir, { recursive: true })
+
+    const discovered = getAvailableThemes()
+    const allVariants = ['dark', ...discovered.filter(t => t !== 'dark')]
+    const mapBlock = tokenMapBlock()
+    const charLayer = characterLayer()
+
+    console.log('\n  Generating Mastodon 4.6 theme entrypoints...')
+    for (const theme of allVariants) {
+        const scss = `// Handfish: ${themeLabel(theme)} — Mastodon 4.6 (token-mapped)\n` +
+            `// Generated by tangerine-handfish (--mastodon46) — do not edit\n` +
+            `@use 'application';\n\n` +
+            `/* Handfish design tokens — this theme's palette, applied unconditionally */\n` +
+            `${handfishLayer(theme)}\n\n` +
+            `/* Mastodon 4.6 semantic tokens -> Handfish */\n${mapBlock}\n\n` +
+            `${charLayer}\n`
+        fs.writeFileSync(path.join(stylesDir, `handfish-${theme}.scss`), scss)
+        console.log(`  - dist/mastodon46/styles/handfish-${theme}.scss`)
+    }
+
+    const themesYml = allVariants.map(t => `handfish-${t}: styles/handfish-${t}.scss`).join('\n') + '\n'
+    fs.writeFileSync(path.join(outDir, 'themes-fragment.yml'), themesYml)
+    const localeYml = `en:\n  themes:\n` +
+        allVariants.map(t => `    handfish-${t}: "${themeLabel(t)}"`).join('\n') + '\n'
+    fs.writeFileSync(path.join(outDir, 'locales-fragment.yml'), localeYml)
+    console.log('  - dist/mastodon46/themes-fragment.yml')
+    console.log('  - dist/mastodon46/locales-fragment.yml')
+
+    const dockerfile = `# Mastodon 4.6 + Handfish themes (token-mapped)
+# Generated by tangerine-handfish (--mastodon46). Build context: dist/mastodon46/
+ARG MASTODON_VERSION=v4.6.0
+FROM node:22-slim AS node
+FROM tootsuite/mastodon:\${MASTODON_VERSION}
+USER root
+COPY --from=node /usr/local/bin/node /usr/local/bin/
+COPY --from=node /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \\
+  && ln -sf /usr/local/lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \\
+  && corepack enable && corepack prepare yarn@4.10.3 --activate
+COPY styles/ app/javascript/styles/
+COPY themes-fragment.yml locales-fragment.yml /tmp/
+RUN cat /tmp/themes-fragment.yml >> config/themes.yml \\
+  && ruby -ryaml -e '\\
+    base = YAML.safe_load_file("config/locales/en.yml", permitted_classes: [Symbol]); \\
+    patch = YAML.safe_load_file("/tmp/locales-fragment.yml", permitted_classes: [Symbol]); \\
+    base["en"]["themes"] ||= {}; \\
+    base["en"]["themes"].merge!(patch["en"]["themes"]); \\
+    File.write("config/locales/en.yml", base.to_yaml)' \\
+  && rm /tmp/themes-fragment.yml /tmp/locales-fragment.yml
+RUN yarn install
+RUN RAILS_ENV=production \\
+    SECRET_KEY_BASE=precompile_placeholder OTP_SECRET=precompile_placeholder \\
+    ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=precompile_placeholder \\
+    ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=precompile_placeholder \\
+    ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=precompile_placeholder \\
+    bundle exec rails assets:precompile
+RUN chown -R mastodon:mastodon public/assets/ public/packs/
+USER mastodon
+`
+    fs.writeFileSync(path.join(outDir, 'Dockerfile'), dockerfile)
+    console.log('  - dist/mastodon46/Dockerfile')
+}
+
 console.log('Building tangerine-handfish...')
 
-if (isMastodon) {
+if (isMastodon46) {
+    await buildMastodon46()
+} else if (isMastodon) {
     await buildMastodon()
 } else if (isStandalone && buildAll) {
     // Build default (no theme) + all discovered themes
