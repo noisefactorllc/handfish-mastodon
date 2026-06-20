@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in tangerine-handfish!
+Thanks for your interest in handfish-mastodon!
 
 ## Build Prerequisites
 
@@ -9,7 +9,7 @@ This project's standalone build inlines design tokens from the [Handfish](https:
 ```
 parent/
 ├── handfish/              # git clone https://github.com/noisedeck/handfish
-└── tangerine-handfish/    # this repo
+└── handfish-mastodon/     # this repo
 ```
 
 The **modular** build (`npm run build`) does not require the Handfish repo — it outputs CSS that expects Handfish tokens loaded separately.

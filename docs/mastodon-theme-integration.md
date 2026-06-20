@@ -1,6 +1,6 @@
 # Mastodon Theme Integration Guide
 
-Deploy Tangerine-Handfish themes to Docker-based Mastodon instances so users can select their preferred Handfish theme from Preferences > Appearance.
+Deploy Handfish for Mastodon themes to Docker-based Mastodon instances so users can select their preferred Handfish theme from Preferences > Appearance.
 
 ## Overview
 
@@ -21,7 +21,7 @@ Both run `tootsuite/mastodon:v4.5.7` via Docker Compose. See scaffold runbook fo
 
 ## Step 1: Build the Mastodon artifacts
 
-From the tangerine-handfish repo:
+From the handfish-mastodon repo:
 
 ```bash
 npm install
@@ -29,7 +29,7 @@ npm run build:mastodon
 ```
 
 This generates `dist/mastodon/` containing:
-- `styles/tangerine-handfish-*.scss` — SCSS wrappers for each theme
+- `styles/handfish-mastodon-*.scss` — SCSS wrappers for each theme
 - `themes-fragment.yml` — entries to append to Mastodon's `config/themes.yml`
 - `locales-fragment.yml` — human-friendly theme names for Mastodon's locale system
 - `Dockerfile` — extends official Mastodon image with all themes pre-compiled
@@ -120,7 +120,7 @@ Update `docker-compose.yml` with the new tag, run any Mastodon migrations as usu
 
 ## Upgrading Themes
 
-When theme CSS is updated in tangerine-handfish:
+When theme CSS is updated in handfish-mastodon:
 
 1. Rebuild: `npm run build:mastodon`
 2. Transfer and rebuild the Docker image (steps 2-3)
