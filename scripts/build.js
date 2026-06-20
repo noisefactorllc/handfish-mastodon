@@ -402,20 +402,24 @@ USER mastodon
 }
 
 // ============================================================================
-// Mastodon 4.6 token-mapping build (--mastodon46)
+// Mastodon 4.6 direct-binding build (--mastodon46)
 //
 // 4.6 replaced the SCSS-variable theme system with CSS design tokens
 // (--color-* in app/javascript/styles/mastodon/theme/). Each Handfish theme
 // becomes a config/themes.yml entry whose entrypoint:
 //   1. @use 'application'  — pulls in Mastodon's own theme + component styles
-//   2. defines this theme's Handfish --hf-* tokens (a single palette)
-//   3. maps Mastodon --color-* semantic tokens onto --hf-* for all schemes
-//   4. applies a character layer (fonts/radius/shadow) via --hf-*
-// No TangerineUI overlay — that base is discontinued and targeted 4.5 markup.
+//   2. @font-face          — the Handfish web fonts this theme needs
+//   3. binds Handfish palette values DIRECTLY onto Mastodon's --color-* design
+//      tokens, resolved to literals at build time (no intermediate --hf-* layer)
+//   4. a character layer (fonts/radius/shadow) using the same resolved literals
+// Handfish tokens are the source: the build resolves their values and writes
+// them straight into Mastodon 4.6's design tokens. No --hf-* indirection, no
+// TangerineUI overlay (that base is discontinued and targeted 4.5 markup).
 // ============================================================================
 
-// Mastodon 4.6 semantic token -> Handfish token reference. Applied under every
-// color-scheme selector because each Handfish theme is a single fixed palette.
+// Mastodon 4.6 design token <- Handfish source token. Each value is resolved to
+// a literal at build time (resolveExpr) and bound directly — no --hf-* in the
+// output. Applied under every color-scheme selector (each theme = one palette).
 const M46_TOKEN_MAP = {
     '--color-bg-primary': 'var(--hf-color-1)',
     '--color-bg-secondary': 'var(--hf-color-2)',
@@ -454,56 +458,103 @@ function stripMediaLight(css) {
     return css.replace(/@media\s*\(prefers-color-scheme:\s*light\)\s*\{(?:[^{}]|\{[^{}]*\})*\}/g, '')
 }
 
-// Assemble the Handfish --hf-* token layer for one theme: tokens.css plus the
-// theme file with its [data-theme="X"] block unwrapped to :root (applies
-// unconditionally) and other variants stripped. No TangerineUI overlay.
-function handfishLayer(theme) {
-    let tokensCSS = stripMediaLight(fs.readFileSync(path.join(handfishStylesDir, 'tokens.css'), 'utf8'))
-    if (!theme || theme === 'dark') return tokensCSS // dark = tokens.css :root default
-
-    let themePath = path.join(handfishStylesDir, 'themes', `${theme}.css`)
-    if (!fs.existsSync(themePath)) {
-        const baseName = theme.replace(/-(?:dark|light)$/, '')
-        themePath = path.join(handfishStylesDir, 'themes', `${baseName}.css`)
-    }
-    let themeCSS
-    if (fs.existsSync(themePath)) {
-        themeCSS = fs.readFileSync(themePath, 'utf8')
-    } else {
-        const m = tokensCSS.match(new RegExp(`\\[data-theme="${theme}"\\]\\s*\\{[^}]*\\}`, 's'))
-        themeCSS = m ? m[0] : ''
-    }
-    themeCSS = themeCSS.replace(`[data-theme="${theme}"]`, ':root')
-    themeCSS = themeCSS.replace(/\[data-theme="[^"]+"\]\s*\{[^}]*\}/gs, '')
-    return `${tokensCSS}\n\n${themeCSS}`
+// Extract every `@font-face { ... }` block from a CSS string.
+function extractFontFaces(css) {
+    return (css.match(/@font-face\s*\{[^}]*\}/g) || []).join('\n\n')
 }
 
-// Mastodon 4.6 token overrides, emitted under all color-scheme selectors so they
-// win over mastodon/theme by equal-specificity + later source order.
-function tokenMapBlock() {
-    const decls = Object.entries(M46_TOKEN_MAP).map(([k, v]) => `  ${k}: ${v};`).join('\n')
-    // Base tier: win over mastodon/theme's [data-color-scheme] rules (equal specificity, later source order).
+// Parse `--hf-*: value;` custom-property declarations from a CSS string into a map.
+function parseHfDecls(css) {
+    const out = {}
+    for (const m of css.matchAll(/(--hf-[\w-]+)\s*:\s*([^;]+);/g)) out[m[1]] = m[2].trim()
+    return out
+}
+
+// Substitute every var(--hf-*) in an expression with its resolved literal.
+function resolveExpr(expr, resolved) {
+    return expr.replace(/var\(\s*(--hf-[\w-]+)\s*\)/g, (m, ref) => resolved[ref] ?? m)
+}
+
+// Follow var(--hf-*) chains to literals across the whole token map.
+function resolveTokenMap(map) {
+    const out = { ...map }
+    for (let pass = 0; pass < 12; pass++) {
+        let changed = false
+        for (const k of Object.keys(out)) {
+            const next = resolveExpr(out[k], out)
+            if (next !== out[k]) { out[k] = next; changed = true }
+        }
+        if (!changed) break
+    }
+    return out
+}
+
+// Resolve one theme's Handfish tokens to literal values + collect its @font-face
+// rules. Base = tokens.css :root defaults (dark); a theme file or [data-theme]
+// block overrides a subset. Returns { vars, fontFaces }. No --hf-* survives here —
+// the values are bound directly into Mastodon's design tokens downstream.
+function resolveHandfishTokens(theme) {
+    const tokensRaw = fs.readFileSync(path.join(handfishStylesDir, 'tokens.css'), 'utf8')
+    let fontFaces = extractFontFaces(tokensRaw)
+
+    // Base map = :root defaults only: drop @media light, @font-face, [data-theme=*]
+    // and [data-opaque] so parseHfDecls sees just the default :root declarations.
+    const baseCSS = stripMediaLight(tokensRaw)
+        .replace(/@font-face\s*\{[^}]*\}/g, '')
+        .replace(/\[data-theme="[^"]+"\]\s*\{[^}]*\}/gs, '')
+        .replace(/\[data-opaque\][^{]*\{[^}]*\}/gs, '')
+    let merged = parseHfDecls(baseCSS)
+
+    if (theme && theme !== 'dark') {
+        // Override block: a theme file (themes/<name>.css, or themes/<base>.css for
+        // a -dark/-light pair), else a [data-theme] block back in tokens.css (light).
+        let themeFile = path.join(handfishStylesDir, 'themes', `${theme}.css`)
+        if (!fs.existsSync(themeFile)) {
+            const baseName = theme.replace(/-(?:dark|light)$/, '')
+            themeFile = path.join(handfishStylesDir, 'themes', `${baseName}.css`)
+        }
+        let overrideCSS = tokensRaw
+        if (fs.existsSync(themeFile)) {
+            overrideCSS = fs.readFileSync(themeFile, 'utf8')
+            fontFaces += '\n\n' + extractFontFaces(overrideCSS)
+        }
+        const m = overrideCSS.match(new RegExp(`\\[data-theme="${theme}"\\]\\s*\\{([^}]*)\\}`, 's'))
+        if (m) merged = { ...merged, ...parseHfDecls(m[1]) }
+        else console.warn(`  ⚠ no [data-theme="${theme}"] block found for "${theme}"`)
+    }
+
+    return { vars: resolveTokenMap(merged), fontFaces: fontFaces.trim() }
+}
+
+// Mastodon 4.6 design tokens bound directly to this theme's resolved Handfish
+// values, under all color-scheme + high-contrast selectors so they win over
+// mastodon/theme (equal/greater specificity + later source order).
+function tokenBindingBlock(resolved) {
+    const decls = Object.entries(M46_TOKEN_MAP)
+        .map(([k, v]) => `  ${k}: ${resolveExpr(v, resolved)};`).join('\n')
+    // Base tier: equal specificity to mastodon/theme's [data-color-scheme] rules; later source order wins.
     const base = `:root,\nhtml:not([data-color-scheme]),\n[data-color-scheme='dark'],\n[data-color-scheme='light'] {\n${decls}\n}`
-    // Contrast tier: re-assert at [data-color-scheme][data-contrast='high'] = specificity (0,2,0) so the
-    // theme palette also wins over Mastodon's contrast-overrides mixin when the user sets Contrast=High.
+    // Contrast tier: (0,2,0) so the palette also wins over Mastodon's contrast-overrides at Contrast=High.
     const contrast = `[data-color-scheme='dark'][data-contrast='high'],\n[data-color-scheme='light'][data-contrast='high'],\nhtml:not([data-color-scheme])[data-contrast='high'] {\n${decls}\n}`
     return `${base}\n\n${contrast}`
 }
 
-// Character layer: non-color Handfish identity (fonts, radius, shadow) applied to
-// stable Mastodon 4.6 surfaces via --hf-* tokens. Conservative v1 — refined with
-// visual feedback after the first CI build proves the pipeline.
-function characterLayer() {
-    return `/* Handfish character layer (v1: fonts + radius + shadow; selectors verified against Mastodon 4.6) */
+// Character layer: non-color Handfish identity (fonts, radius, shadow) on stable
+// Mastodon 4.6 surfaces, using resolved literals. Selectors verified against 4.6.
+function characterLayer(resolved) {
+    const font = resolved['--hf-font-family'] || 'inherit'
+    const radius = resolved['--hf-radius'] || '0'
+    const shadow = resolved['--hf-shadow-lg'] || 'none'
+    return `/* Handfish character layer (fonts + radius + shadow) */
 body, .app-holder, button, input, textarea, select {
-  font-family: var(--hf-font-family), system-ui, sans-serif;
+  font-family: ${font}, system-ui, sans-serif;
 }
 .dropdown-menu, .modal-root__modal, .dialog-modal, .boost-modal,
 .actions-modal, .column-header, .compose-form, .status {
-  border-radius: var(--hf-radius);
+  border-radius: ${radius};
 }
 .dropdown-menu, .modal-root__modal, .dialog-modal {
-  box-shadow: var(--hf-shadow-lg);
+  box-shadow: ${shadow};
 }`
 }
 
@@ -514,18 +565,16 @@ async function buildMastodon46() {
 
     const discovered = getAvailableThemes()
     const allVariants = ['dark', ...discovered.filter(t => t !== 'dark')]
-    const mapBlock = tokenMapBlock()
-    const charLayer = characterLayer()
 
     console.log('\n  Generating Mastodon 4.6 theme entrypoints...')
     for (const theme of allVariants) {
-        const scss = `// Handfish: ${themeLabel(theme)} — Mastodon 4.6 (token-mapped)\n` +
+        const { vars, fontFaces } = resolveHandfishTokens(theme)
+        const scss = `// Handfish: ${themeLabel(theme)} — Mastodon 4.6 (Handfish tokens bound directly)\n` +
             `// Generated by handfish-mastodon (--mastodon46) — do not edit\n` +
             `@use 'application';\n\n` +
-            `/* Handfish design tokens — this theme's palette, applied unconditionally */\n` +
-            `${handfishLayer(theme)}\n\n` +
-            `/* Mastodon 4.6 semantic tokens -> Handfish */\n${mapBlock}\n\n` +
-            `${charLayer}\n`
+            `/* Handfish web fonts */\n${fontFaces}\n\n` +
+            `/* Handfish palette bound directly to Mastodon 4.6 design tokens */\n${tokenBindingBlock(vars)}\n\n` +
+            `${characterLayer(vars)}\n`
         fs.writeFileSync(path.join(stylesDir, `handfish-${theme}.scss`), scss)
         console.log(`  - dist/mastodon46/styles/handfish-${theme}.scss`)
     }

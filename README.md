@@ -1,20 +1,32 @@
 # Handfish for Mastodon
 
-The [Handfish](https://handfish.noisefactor.io) design system as a Mastodon theme.
-
-Based on [TangerineUI-for-Mastodon](https://github.com/nileane/TangerineUI-for-Mastodon) by Nileane.
+The [Handfish](https://handfish.noisefactor.io) design system as Mastodon themes.
 
 ## What This Is
 
-A Mastodon CSS theme that combines TangerineUI's UX improvements (compact timeline, interaction animations, icon system, DM styling) with Handfish's design language (OKLCH colors, glassmorphism, themed typography, consistent spacing).
+A set of Mastodon themes built from the Handfish design language — OKLCH color palettes, themed typography, glassmorphism, consistent spacing. There are two ways to ship them:
 
-Supports all Handfish themes.
+- **Selectable themes for Mastodon 4.6+** (recommended). Every Handfish variant is baked into a custom Mastodon image and registered in `config/themes.yml`, so users pick one from Preferences > Appearance. The Handfish palette is bound **directly** onto Mastodon 4.6's `--color-*` design tokens — no intermediate variable layer. See [docs/mastodon-theme-integration.md](docs/mastodon-theme-integration.md) and `npm run build:mastodon46`.
+- **Standalone CSS** for the admin Custom CSS box or a browser extension (a single site-wide look). This older build layers Handfish tokens over the [TangerineUI for Mastodon](https://github.com/nileane/TangerineUI-for-Mastodon) base by Nileane. That upstream is discontinued, so the Mastodon 4.6 path above is the one under active development.
 
-## Usage
+## Mastodon 4.6 themes (recommended)
 
-### Option A: Separate Stylesheets (Untested)
+```bash
+npm install
+npm run build:mastodon46   # -> dist/mastodon46/ (theme entrypoints, themes.yml + locale fragments, Dockerfile)
+```
 
-Load Handfish tokens, an optional theme, then handfish-mastodon:
+Build the image from `dist/mastodon46/` and point your `web`/`sidekiq` services at it. Full walkthrough: [docs/mastodon-theme-integration.md](docs/mastodon-theme-integration.md).
+
+## Standalone CSS (legacy)
+
+```bash
+npm run build                                    # modular output
+npm run build:standalone                         # standalone with default tokens
+node scripts/build.js --standalone --theme cyberpunk  # standalone with a specific theme
+```
+
+Paste the contents of `dist/handfish-mastodon-standalone.css` into your instance's **Custom CSS** field (Administration > Server Settings > Appearance), or load it directly:
 
 ```html
 <link rel="stylesheet" href="https://handfish.noisefactor.io/0/styles/tokens.css">
@@ -22,49 +34,30 @@ Load Handfish tokens, an optional theme, then handfish-mastodon:
 <link rel="stylesheet" href="handfish-mastodon.css">
 ```
 
-### Option B: Mastodon Admin Panel
-
-Paste the contents of `dist/handfish-mastodon-standalone.css` into your instance's **Custom CSS** field (Administration > Server Settings > Appearance).
-
-### Option C: Browser Extension
-
-Use [Stylus](https://add0n.com/stylus.html) or similar to inject the standalone CSS.
-
 ## Content Security Policy
 
-Handfish for Mastodon loads fonts and (optionally) stylesheets from a privacy-respecting CDN with no tracking, cookies, or analytics. If your Mastodon instance uses a Content Security Policy, add these origins:
+Handfish for Mastodon loads fonts (and, for direct linking, stylesheets) from a privacy-respecting CDN with no tracking, cookies, or analytics. If your Mastodon instance uses a Content Security Policy, add these origins:
 
 ```
 font-src https://fonts.noisefactor.io;
 style-src https://handfish.noisefactor.io;
 ```
 
-The standalone build (Option B) only requires `font-src`. Direct linking (Option A) requires both.
-
-## Building
-
-```bash
-npm install
-npm run build                                    # modular output
-npm run build:standalone                         # standalone with default tokens
-node scripts/build.js --standalone --theme cyberpunk  # standalone with specific theme
-```
-
-For Mastodon 4.6 selectable themes, see [docs/mastodon-theme-integration.md](docs/mastodon-theme-integration.md) and `npm run build:mastodon46`.
+The 4.6 themes and the standalone build only require `font-src`. Direct linking requires both.
 
 ## Available Themes
 
-Each standalone build bakes in a specific theme. Pick the CSS file that matches the look you want:
-
 `dark` (default), `light`, `brutalist`, `corporate`, `cyberpunk`, `dusk`, `earthy`, `gothic`, `gray-dark`, `gray-light`, `high-contrast-dark`, `high-contrast-light`, `kawaii`, `neutral-dark`, `neutral-light`, `newspaper`, `ocean`, `organic`, `rave`, `sunset`, `synthwave`, `terminal`
-
-For the modular build (Option A), load the matching Handfish theme stylesheet before handfish-mastodon.
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for build prerequisites and guidelines.
 
 **Note:** The standalone build requires the [Handfish](https://github.com/noisedeck/handfish) repo cloned as a sibling directory (`../handfish/`). The modular build (`npm run build`) works without it.
+
+## Credits
+
+The standalone/legacy CSS is based on [TangerineUI for Mastodon](https://github.com/nileane/TangerineUI-for-Mastodon) by Nileane (MIT). See LICENSE.
 
 ## License
 
