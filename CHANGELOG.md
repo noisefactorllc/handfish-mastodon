@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 — 2026-07-02
+
+- Fix (`--mastodon46`): bind the media/overlay tokens (`--color-text-on-media`, `--color-bg-media`, `--color-bg-media-base`, `--color-border-media`) under the same `:root`-inclusive selector as the palette. Mastodon 4.6 defines these only under `[data-color-scheme='light'|'dark']`, so with appearance `auto` (the default) they went undefined and on-media text inherited the theme's dark body color over the always-dark media scrim — unreadable alt-text/spoiler overlays in every light theme. Now white-on-dark under every scheme, matching Mastodon's intent; no light/dark regression.
+
 ## 0.2.0 — 2026-06-20
 
 - Rebrand: "TangerineUI Handfish" → "Handfish for Mastodon" (`@noisedeck/tangerine-handfish` → `@noisefactorllc/handfish-mastodon`); Tangerine project branding dropped, upstream TangerineUI attribution kept

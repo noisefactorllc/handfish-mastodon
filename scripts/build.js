@@ -450,6 +450,21 @@ const M46_TOKEN_MAP = {
     '--color-border-error': 'var(--hf-red)',
     '--color-text-disabled': 'var(--hf-color-4)',
     '--color-bg-disabled': 'var(--hf-color-3)',
+    // Media/overlay tokens. Mastodon 4.6 defines these ONLY under
+    // [data-color-scheme='light'|'dark'] (theme/_light.scss, _dark.scss), so with
+    // appearance='auto' (Mastodon's default — the html gets data-color-scheme='auto',
+    // which no scheme selector matches) they go undefined. Text on media then falls
+    // back to the inherited body color (--color-text-primary), which in a LIGHT theme
+    // is dark — landing dark-on-dark over the always-dark media scrim (unreadable alt
+    // text, spoiler overlays, overlay buttons). Our palette tokens survive 'auto'
+    // because tokenBindingBlock() also emits them under :root; the media tokens must
+    // ride the same selector. The scrim is always dark and its text always light
+    // (Mastodon's own intent, identical in light and dark), so these are palette-
+    // independent constants, not --hf-* values.
+    '--color-text-on-media': 'var(--color-white)',
+    '--color-bg-media-base': 'var(--color-black)',
+    '--color-bg-media': 'rgb(from var(--color-black) r g b / 65%)',
+    '--color-border-media': 'rgb(from var(--color-white) r g b / 15%)',
 }
 
 // Strip the OS-driven light block so an explicit Handfish theme is deterministic
