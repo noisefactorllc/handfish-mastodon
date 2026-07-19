@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 — 2026-07-19
+
+- Fix (`--mastodon46`): bind the modal overlay tokens (`--color-bg-overlay`, `--color-bg-overlay-base`, `--color-bg-overlay-highlight`) under the same `:root`-inclusive selector as the palette. Mastodon 4.6 defines them only under `[data-color-scheme='light'|'dark']`, so whenever the html attribute stays `auto` (e.g. a proxy CSP that blocks Mastodon's inline theme-selection script) they went undefined and `.modal-root__overlay` rendered transparent — confirm dialogs blended straight into the page (mastodon/mastodon#39869, reported on genart.social). The scrim follows the theme's own palette, not the OS scheme: near-black over dark themes, a background-colored wash over light ones, chosen from the resolved bg lightness at build time. Backdrops are now self-sufficient under `auto`; a few cosmetic scheme-gated tokens (`--dropdown-shadow`, favourite/bookmark highlight colors, graph fills) still depend on the instance letting Mastodon's inline theme-selection script run.
+
 ## 0.2.1 — 2026-07-02
 
 - Fix (`--mastodon46`): bind the media/overlay tokens (`--color-text-on-media`, `--color-bg-media`, `--color-bg-media-base`, `--color-border-media`) under the same `:root`-inclusive selector as the palette. Mastodon 4.6 defines these only under `[data-color-scheme='light'|'dark']`, so with appearance `auto` (the default) they went undefined and on-media text inherited the theme's dark body color over the always-dark media scrim — unreadable alt-text/spoiler overlays in every light theme. Now white-on-dark under every scheme, matching Mastodon's intent; no light/dark regression.

@@ -541,11 +541,39 @@ function resolveHandfishTokens(theme) {
     return { vars: resolveTokenMap(merged), fontFaces: fontFaces.trim() }
 }
 
+// Overlay/backdrop tokens. Same trap as the media tokens above: Mastodon 4.6
+// defines these only under [data-color-scheme='light'|'dark'], so whenever the
+// html attribute stays 'auto' they are undefined and .modal-root__overlay's
+// `background: var(--color-bg-overlay)` computes to transparent — confirm
+// dialogs then blend into the page (mastodon/mastodon#39869; also hits
+// .drawer__backdrop, .upload-area, .media-gallery__preview,
+// .columns-area__panels__pane--overlay).
+// Unlike the media constants these are palette-dependent: a Handfish theme is
+// one palette regardless of OS scheme, so the scrim follows the theme's own
+// lightness — near-black over dark palettes (stock dark behavior), a
+// bg-colored wash over light ones (stock light behavior). Lightness is parsed
+// from the resolved bg-primary oklch literal. -base/-highlight have no
+// consumers in stock 4.6.2 CSS yet but are defined by both stock schemes;
+// bound here with stock's values so the family stays complete.
+function overlayTokenDecls(resolved) {
+    const bg = resolved['--hf-color-1'] || ''
+    const m = bg.match(/^oklch\(\s*([\d.]+)%/)
+    if (!m) console.warn(`  ⚠ cannot parse bg lightness from "${bg}" — using dark overlay tokens`)
+    const isDark = m ? parseFloat(m[1]) < 50 : true
+    return {
+        '--color-bg-overlay': isDark ? 'var(--color-black)' : 'var(--color-bg-primary)',
+        '--color-bg-overlay-base': 'rgb(from var(--color-grey-950) r g b / 60%)',
+        '--color-bg-overlay-highlight': isDark
+            ? 'rgb(from var(--color-white) r g b / 5%)'
+            : 'rgb(from var(--color-grey-950) r g b / 5%)',
+    }
+}
+
 // Mastodon 4.6 design tokens bound directly to this theme's resolved Handfish
 // values, under all color-scheme + high-contrast selectors so they win over
 // mastodon/theme (equal/greater specificity + later source order).
 function tokenBindingBlock(resolved) {
-    const decls = Object.entries(M46_TOKEN_MAP)
+    const decls = Object.entries({ ...M46_TOKEN_MAP, ...overlayTokenDecls(resolved) })
         .map(([k, v]) => `  ${k}: ${resolveExpr(v, resolved)};`).join('\n')
     // Base tier: equal specificity to mastodon/theme's [data-color-scheme] rules; later source order wins.
     const base = `:root,\nhtml:not([data-color-scheme]),\n[data-color-scheme='dark'],\n[data-color-scheme='light'] {\n${decls}\n}`
