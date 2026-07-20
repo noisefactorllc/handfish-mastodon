@@ -541,42 +541,134 @@ function resolveHandfishTokens(theme) {
     return { vars: resolveTokenMap(merged), fontFaces: fontFaces.trim() }
 }
 
-// Overlay/backdrop tokens. Same trap as the media tokens above: Mastodon 4.6
-// defines these only under [data-color-scheme='light'|'dark'], so whenever the
-// html attribute stays 'auto' they are undefined and .modal-root__overlay's
-// `background: var(--color-bg-overlay)` computes to transparent — confirm
-// dialogs then blend into the page (mastodon/mastodon#39869; also hits
+// Lightness (oklch L, as a percentage) of a resolved token literal, or null
+// if unparseable. Accepts both percentage (oklch(85% …)) and unitless
+// (oklch(.85 …)) forms, like parseOklch above.
+function oklchLightness(value) {
+    const m = (value || '').match(/^oklch\(\s*([\d.]+)(%?)[\s)]/)
+    if (!m) return null
+    const n = parseFloat(m[1])
+    return m[2] ? n : n * 100
+}
+
+// Selector tier shared by the token-binding block and the invert utilities —
+// equal specificity to mastodon/theme's rules under every attribute state,
+// with :root covering data-color-scheme='auto'; later source order wins.
+const M46_BINDING_SELECTORS = [":root", "html:not([data-color-scheme])", "[data-color-scheme='dark']", "[data-color-scheme='light']"]
+
+// A Handfish theme is one palette; its lightness class comes from the resolved
+// bg-primary literal, not from the OS scheme.
+function paletteIsDark(resolved) {
+    const l = oklchLightness(resolved['--hf-color-1'])
+    if (l === null) console.warn(`  ⚠ cannot parse bg lightness from "${resolved['--hf-color-1']}" — treating palette as dark`)
+    return l === null || l < 50
+}
+
+// Every token (and the color-scheme property) that Mastodon 4.6 defines only
+// under [data-color-scheme='light'|'dark'] (theme/_dark.scss, _light.scss @
+// v4.6.2 — re-audit on upgrade). Two failure modes without these: with the
+// html attribute stuck at 'auto' (e.g. a proxy CSP blocking Mastodon's inline
+// theme-selection script) they are undefined outright — .modal-root__overlay's
+// `background: var(--color-bg-overlay)` computes to transparent and confirm
+// dialogs blend into the page (mastodon/mastodon#39869; also hits
 // .drawer__backdrop, .upload-area, .media-gallery__preview,
-// .columns-area__panels__pane--overlay).
-// Unlike the media constants these are palette-dependent: a Handfish theme is
-// one palette regardless of OS scheme, so the scrim follows the theme's own
-// lightness — near-black over dark palettes (stock dark behavior), a
-// bg-colored wash over light ones (stock light behavior). Lightness is parsed
-// from the resolved bg-primary oklch literal. -base/-highlight have no
-// consumers in stock 4.6.2 CSS yet but are defined by both stock schemes;
-// bound here with stock's values so the family stays complete.
-function overlayTokenDecls(resolved) {
-    const bg = resolved['--hf-color-1'] || ''
-    const m = bg.match(/^oklch\(\s*([\d.]+)%/)
-    if (!m) console.warn(`  ⚠ cannot parse bg lightness from "${bg}" — using dark overlay tokens`)
-    const isDark = m ? parseFloat(m[1]) < 50 : true
+// .columns-area__panels__pane--overlay). With the attribute resolved, they
+// follow the OS scheme instead of the theme — a dark Handfish theme under a
+// light OS got light scrollbars, a page-colored scrim, and light-tuned
+// shadows, which is why picking a theme also seemed to require flipping the
+// Color Scheme setting. Binding them here makes the theme selection fully
+// self-describing: every value follows the palette's own lightness class or
+// chains to tokens we already bind (so Handfish hues flow through), and
+// bright semantic bases pick readable on-colors from their resolved
+// lightness at build time rather than assuming stock's white-on-dark scale.
+// Residual at v4.6.2, deliberately NOT locked here (re-audit on upgrade):
+// three attribute-gated style rules outside theme/ — the empty-state
+// illustration's internal SVG vars ([data-color-scheme='dark'] .empty-state
+// svg in admin.scss plus the hash-mangled .defaultImage CSS module) and two
+// dark-only borders (account_header/account_timeline modules) — and the
+// asset pipeline's light-dark() polyfill space toggles
+// (--lightningcss-light/dark), which have zero consumers at 4.6.2 but would
+// follow the attribute if upstream starts using light-dark().
+function schemeGatedDecls(resolved, isDark) {
+    // Text on a bg-*-base chip: stock assumes its scale bases are dark enough
+    // for white; Handfish accents can be bright (e.g. yellow at L 89%).
+    const onBase = (hfToken) => {
+        const l = oklchLightness(resolved[hfToken])
+        if (l === null) console.warn(`  ⚠ cannot parse lightness of ${hfToken} ("${resolved[hfToken]}") — defaulting to white on-color`)
+        return l !== null && l > 60 ? 'var(--color-grey-950)' : 'var(--color-white)'
+    }
     return {
+        'color-scheme': isDark ? 'dark' : 'light',
+        // Overlay/backdrop family
         '--color-bg-overlay': isDark ? 'var(--color-black)' : 'var(--color-bg-primary)',
         '--color-bg-overlay-base': 'rgb(from var(--color-grey-950) r g b / 60%)',
         '--color-bg-overlay-highlight': isDark
             ? 'rgb(from var(--color-white) r g b / 5%)'
             : 'rgb(from var(--color-grey-950) r g b / 5%)',
+        '--overlay-strength-secondary': '4%',
+        // Shadows: stock strength is the only per-scheme piece; heavier over
+        // dark palettes, lighter over light ones, exactly as stock intends.
+        '--shadow-strength-primary': isDark ? '80%' : '30%',
+        '--color-shadow-primary': 'rgb(from var(--color-black) r g b / var(--shadow-strength-primary))',
+        '--dropdown-shadow': '0 20px 25px -5px var(--color-shadow-primary), 0 8px 10px -6px var(--color-shadow-primary)',
+        '--overlay-icon-shadow': 'drop-shadow(0 0 8px var(--color-shadow-primary))',
+        // On-colors for semantic chips, contrast-checked against our accents
+        '--color-text-on-error-base': onBase('--hf-red'),
+        '--color-text-on-warning-base': onBase('--hf-yellow'),
+        '--color-text-on-success-base': onBase('--hf-green'),
+        '--color-text-on-disabled': 'var(--color-text-secondary)',
+        // Chains — same references as stock, resolving to Handfish hues
+        '--color-text-bookmark-highlight': 'var(--color-text-error)',
+        '--color-text-favourite-highlight': 'var(--color-text-warning)',
+        '--color-graph-primary-stroke': 'var(--color-text-brand)',
+        '--color-graph-primary-fill': 'var(--color-bg-brand-softest)',
+        '--color-graph-warning-stroke': 'var(--color-text-warning)',
+        '--color-graph-warning-fill': 'var(--color-bg-warning-softest)',
+        '--color-graph-disabled-stroke': 'var(--color-text-disabled)',
+        '--color-graph-disabled-fill': 'var(--color-bg-disabled)',
+        // Soft tints: stock uses scale-50/100 (light) or -900/950 (dark);
+        // mixing the semantic base into bg-primary self-adapts to the palette.
+        '--color-bg-error-base-hover': 'color-mix(in oklab, var(--color-bg-error-base) 80%, var(--color-black))',
+        '--color-bg-error-soft': 'color-mix(in oklab, var(--color-bg-error-base) 22%, var(--color-bg-primary))',
+        '--color-bg-error-softest': 'color-mix(in oklab, var(--color-bg-error-base) 12%, var(--color-bg-primary))',
+        '--color-bg-warning-soft': 'color-mix(in oklab, var(--color-bg-warning-base) 22%, var(--color-bg-primary))',
+        '--color-bg-warning-softest': 'color-mix(in oklab, var(--color-bg-warning-base) 12%, var(--color-bg-primary))',
+        '--color-bg-success-soft': 'color-mix(in oklab, var(--color-bg-success-base) 22%, var(--color-bg-primary))',
+        '--color-bg-success-softest': 'color-mix(in oklab, var(--color-bg-success-base) 12%, var(--color-bg-primary))',
+        '--color-border-success-soft': 'color-mix(in oklab, var(--color-text-success) 40%, var(--color-bg-primary))',
+        '--color-border-error-soft': 'rgb(from var(--color-text-error) r g b / 50%)',
+        '--color-border-warning-soft': 'rgb(from var(--color-text-warning) r g b / 50%)',
+        // Brand text on the inverted surface: mixing toward bg-primary darkens
+        // it over dark palettes (light inverted bg) and lightens it over light
+        // palettes (dark inverted bg) — one formula, both directions.
+        '--color-text-brand-on-inverted': 'color-mix(in oklab, var(--color-text-brand) 55%, var(--color-bg-primary))',
+        // Rich-text trio: fixed stock hue family, scheme-lit; keep per class.
+        '--rich-text-container-color': isDark ? 'rgb(87 24 60 / 100%)' : 'rgb(255 216 231 / 100%)',
+        '--rich-text-text-color': isDark ? 'rgb(255 175 212 / 100%)' : 'rgb(114 47 83 / 100%)',
+        '--rich-text-decorations-color': isDark ? 'rgb(128 58 95 / 100%)' : 'rgb(255 175 212 / 100%)',
     }
+}
+
+// Stock gates `.invert-on-dark`/`.invert-on-light { filter: invert(1) }` under
+// the scheme selectors; palette-lock them the same way as the tokens (apply
+// the palette's own class, neutralize the other). Selector prefixes match the
+// binding block so these win over mastodon/theme by source order.
+function invertUtilityBlock(isDark) {
+    const on = isDark ? 'invert-on-dark' : 'invert-on-light'
+    const off = isDark ? 'invert-on-light' : 'invert-on-dark'
+    return `/* Palette-locked invert utilities */\n` +
+        `${M46_BINDING_SELECTORS.map(s => `${s} .${on}`).join(',\n')} {\n  filter: invert(1);\n}\n\n` +
+        `${M46_BINDING_SELECTORS.map(s => `${s} .${off}`).join(',\n')} {\n  filter: none;\n}`
 }
 
 // Mastodon 4.6 design tokens bound directly to this theme's resolved Handfish
 // values, under all color-scheme + high-contrast selectors so they win over
 // mastodon/theme (equal/greater specificity + later source order).
-function tokenBindingBlock(resolved) {
-    const decls = Object.entries({ ...M46_TOKEN_MAP, ...overlayTokenDecls(resolved) })
+function tokenBindingBlock(resolved, isDark) {
+    const decls = Object.entries({ ...M46_TOKEN_MAP, ...schemeGatedDecls(resolved, isDark) })
         .map(([k, v]) => `  ${k}: ${resolveExpr(v, resolved)};`).join('\n')
     // Base tier: equal specificity to mastodon/theme's [data-color-scheme] rules; later source order wins.
-    const base = `:root,\nhtml:not([data-color-scheme]),\n[data-color-scheme='dark'],\n[data-color-scheme='light'] {\n${decls}\n}`
+    const base = `${M46_BINDING_SELECTORS.join(',\n')} {\n${decls}\n}`
     // Contrast tier: (0,2,0) so the palette also wins over Mastodon's contrast-overrides at Contrast=High.
     const contrast = `[data-color-scheme='dark'][data-contrast='high'],\n[data-color-scheme='light'][data-contrast='high'],\nhtml:not([data-color-scheme])[data-contrast='high'] {\n${decls}\n}`
     return `${base}\n\n${contrast}`
@@ -612,11 +704,13 @@ async function buildMastodon46() {
     console.log('\n  Generating Mastodon 4.6 theme entrypoints...')
     for (const theme of allVariants) {
         const { vars, fontFaces } = resolveHandfishTokens(theme)
+        const isDark = paletteIsDark(vars)
         const scss = `// Handfish: ${themeLabel(theme)} — Mastodon 4.6 (Handfish tokens bound directly)\n` +
             `// Generated by handfish-mastodon (--mastodon46) — do not edit\n` +
             `@use 'application';\n\n` +
             `/* Handfish web fonts */\n${fontFaces}\n\n` +
-            `/* Handfish palette bound directly to Mastodon 4.6 design tokens */\n${tokenBindingBlock(vars)}\n\n` +
+            `/* Handfish palette bound directly to Mastodon 4.6 design tokens */\n${tokenBindingBlock(vars, isDark)}\n\n` +
+            `${invertUtilityBlock(isDark)}\n\n` +
             `${characterLayer(vars)}\n`
         fs.writeFileSync(path.join(stylesDir, `handfish-${theme}.scss`), scss)
         console.log(`  - dist/mastodon46/styles/handfish-${theme}.scss`)
