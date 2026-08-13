@@ -27,6 +27,24 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
+      # dist/ is gitignored, so the Docker build context does not exist in a
+      # fresh checkout — it is generated from src/. Building it here is what
+      # makes the image reproducible from a commit rather than from whatever
+      # happened to be sitting in someone's working tree.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: 'npm'
+      - run: npm ci
+      - name: Generate the Mastodon 4.6 theme build context
+        run: |
+          set -euo pipefail
+          npm run build:mastodon46
+          test -f dist/mastodon46/Dockerfile
+          themes=$(ls dist/mastodon46/styles/ | grep -c '^handfish-.*\.scss$')
+          echo "theme entrypoints generated: $themes"
+          [ "$themes" = "22" ] || { echo "::error::expected 22 theme entrypoints, got $themes"; exit 1; }
+
       # The Mastodon image plus its build layers is several GB and a default
       # runner has little headroom. Running out surfaces as an opaque
       # "ENOSPC" deep inside `yarn install`, so reclaim up front.
