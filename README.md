@@ -53,7 +53,7 @@ The 4.6 themes and the standalone build only require `font-src`. Direct linking 
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for build prerequisites and guidelines.
 
-**Note:** The standalone build requires the [Handfish](https://github.com/noisedeck/handfish) repo cloned as a sibling directory (`../handfish/`). The modular build (`npm run build`) works without it.
+**Note:** The standalone build requires the [Handfish](https://github.com/noisefactorllc/handfish) repo cloned as a sibling directory (`../handfish/`). The modular build (`npm run build`) works without it.
 
 ## Credits
 

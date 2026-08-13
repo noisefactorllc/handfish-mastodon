@@ -4,11 +4,11 @@ Thanks for your interest in handfish-mastodon!
 
 ## Build Prerequisites
 
-This project's standalone build inlines design tokens from the [Handfish](https://github.com/noisedeck/handfish) repo. Clone it as a sibling directory:
+This project's standalone build inlines design tokens from the [Handfish](https://github.com/noisefactorllc/handfish) repo. Clone it as a sibling directory:
 
 ```
 parent/
-├── handfish/              # git clone https://github.com/noisedeck/handfish
+├── handfish/              # git clone https://github.com/noisefactorllc/handfish
 └── handfish-mastodon/     # this repo
 ```
 
