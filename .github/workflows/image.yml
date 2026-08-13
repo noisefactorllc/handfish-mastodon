@@ -1,0 +1,116 @@
+name: Image
+
+# Builds the Mastodon + Handfish container image on an amd64 runner and pushes
+# it to registry.noisefactor.io.
+#
+# This exists so the image is NEVER built on a workstation or on a production
+# server. Runners are amd64, so this is also faster than an emulated local
+# build. Delivery to the (deliberately non-registry-authed) Mastodon hosts is a
+# separate server-side step — see docs/runbook/mastodon-upgrades.md in scaffold.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mastodon_version:
+        description: 'Upstream Mastodon tag to build from (e.g. v4.6.6)'
+        required: true
+        type: string
+      image_revision:
+        description: 'Image revision suffix, bumped when rebuilding the same Mastodon tag (e.g. 1)'
+        required: true
+        default: '1'
+        type: string
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      # The Mastodon image plus its build layers is several GB and a default
+      # runner has little headroom. Running out surfaces as an opaque
+      # "ENOSPC" deep inside `yarn install`, so reclaim up front.
+      - name: Reclaim runner disk
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      - name: Log in to registry.noisefactor.io
+        run: |
+          echo "${{ secrets.REGISTRY_PASS }}" \
+            | docker login registry.noisefactor.io \
+                -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+
+      - name: Build
+        id: build
+        env:
+          MASTODON_VERSION: ${{ inputs.mastodon_version }}
+          IMAGE_REVISION: ${{ inputs.image_revision }}
+        run: |
+          set -euo pipefail
+          TAG="registry.noisefactor.io/mastodon-handfish:${MASTODON_VERSION}-${IMAGE_REVISION}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          docker build \
+            --build-arg "MASTODON_VERSION=${MASTODON_VERSION}" \
+            -t "$TAG" \
+            dist/mastodon46/
+
+      # Verify the artifact rather than trusting that the build "passed".
+      # Each of these has caught a real defect at some point.
+      - name: Verify image
+        env:
+          TAG: ${{ steps.build.outputs.tag }}
+          MASTODON_VERSION: ${{ inputs.mastodon_version }}
+        run: |
+          set -euo pipefail
+
+          arch=$(docker image inspect "$TAG" --format '{{.Os}}/{{.Architecture}}')
+          echo "arch: $arch"
+          [ "$arch" = "linux/amd64" ] || { echo "::error::expected linux/amd64"; exit 1; }
+
+          version=$(docker run --rm --entrypoint ruby "$TAG" \
+            -e 'require "/opt/mastodon/lib/mastodon/version"; puts Mastodon::Version.to_a.join(".")')
+          echo "mastodon version: $version"
+          [ "v$version" = "$MASTODON_VERSION" ] || { echo "::error::version mismatch"; exit 1; }
+
+          themes=$(docker run --rm --entrypoint sh "$TAG" -c 'grep -c "^handfish-" config/themes.yml')
+          echo "themes in config/themes.yml: $themes"
+          [ "$themes" = "22" ] || { echo "::error::expected 22 themes, got $themes"; exit 1; }
+
+          css=$(docker run --rm --entrypoint sh "$TAG" \
+            -c 'ls public/packs/assets/themes/ | grep -c "^handfish-.*\.css$"')
+          echo "compiled theme stylesheets: $css"
+          [ "$css" = "22" ] || { echo "::error::expected 22 compiled stylesheets, got $css"; exit 1; }
+
+          # Direct token binding: the compiled CSS must carry no --hf-* indirection.
+          hf=$(docker run --rm --entrypoint sh "$TAG" \
+            -c 'cat public/packs/assets/themes/handfish-neutral-dark-*.css | grep -c -- "--hf-" || true')
+          echo "residual --hf-* in compiled CSS: $hf"
+          [ "$hf" = "0" ] || { echo "::error::compiled CSS still contains --hf-* indirection"; exit 1; }
+
+          # The hosts' nginx replaces Mastodon's CSP with a static one that must
+          # authorize this exact inline script. Surface the digest so the operator
+          # can confirm it matches what nginx already sends before deploying.
+          digest=$(docker run --rm --entrypoint ruby "$TAG" \
+            -e 'require "digest"; s=File.read("app/javascript/inline/theme-selection.js");
+                puts "sha256-"+Digest::SHA256.base64digest("\n//<![CDATA[\n"+s+"\n//]]>\n")')
+          echo "CSP inline-script digest: $digest"
+          {
+            echo "### Image \`$TAG\`"
+            echo ""
+            echo "| check | value |"
+            echo "|---|---|"
+            echo "| arch | \`$arch\` |"
+            echo "| mastodon version | \`$version\` |"
+            echo "| themes | \`$themes\` |"
+            echo "| compiled stylesheets | \`$css\` |"
+            echo "| residual \`--hf-*\` | \`$hf\` |"
+            echo "| CSP inline-script digest | \`$digest\` |"
+            echo ""
+            echo "The digest **must** match the \`sha256-…\` already in the hosts' nginx CSP \`script-src\`, or \`data-color-scheme\` sticks at \`auto\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push
+        run: docker push "${{ steps.build.outputs.tag }}"
