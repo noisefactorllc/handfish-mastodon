@@ -27,6 +27,16 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
+      # The theme palettes live in the separate (public) handfish design-system
+      # repo. build.js expects it as a sibling checkout at ../handfish, which is
+      # how a developer workspace is laid out; actions/checkout cannot write
+      # above the workspace, so put it in a subdirectory and point HANDFISH_DIR
+      # at it instead.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          repository: noisefactorllc/handfish
+          path: .handfish-src
+
       # dist/ is gitignored, so the Docker build context does not exist in a
       # fresh checkout — it is generated from src/. Building it here is what
       # makes the image reproducible from a commit rather than from whatever
@@ -37,13 +47,26 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - name: Generate the Mastodon 4.6 theme build context
+        env:
+          HANDFISH_DIR: ${{ github.workspace }}/.handfish-src
         run: |
           set -euo pipefail
+          echo "handfish design-system commit: $(git -C .handfish-src rev-parse HEAD)"
+          test -f "$HANDFISH_DIR/src/styles/tokens.css"
           npm run build:mastodon46
           test -f dist/mastodon46/Dockerfile
           themes=$(ls dist/mastodon46/styles/ | grep -c '^handfish-.*\.scss$')
           echo "theme entrypoints generated: $themes"
           [ "$themes" = "22" ] || { echo "::error::expected 22 theme entrypoints, got $themes"; exit 1; }
+          {
+            echo "### Build inputs"
+            echo ""
+            echo "| input | commit |"
+            echo "|---|---|"
+            echo "| handfish-mastodon | \`$(git rev-parse HEAD)\` |"
+            echo "| handfish (design system) | \`$(git -C .handfish-src rev-parse HEAD)\` |"
+            echo "| upstream Mastodon | \`${{ inputs.mastodon_version }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # The Mastodon image plus its build layers is several GB and a default
       # runner has little headroom. Running out surfaces as an opaque
