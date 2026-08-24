@@ -25,6 +25,51 @@ const handfishRoot = process.env.HANDFISH_DIR || path.join(repoRoot, '..', 'hand
 const handfishStylesDir = path.join(handfishRoot, 'src', 'styles')
 
 const args = process.argv.slice(2)
+
+const usage = `Usage:
+  node scripts/build.js
+  node scripts/build.js --standalone [--theme NAME | --all]
+  node scripts/build.js --mastodon
+  node scripts/build.js --mastodon46`
+
+function invalidArgs(message) {
+    console.error(`Error: ${message}`)
+    console.error(usage)
+    process.exit(2)
+}
+
+function validateArgs(argv) {
+    const options = new Set(['--standalone', '--mastodon', '--mastodon46', '--all', '--theme'])
+    let themeCount = 0
+
+    for (let i = 0; i < argv.length; i++) {
+        const arg = argv[i]
+        if (!options.has(arg)) invalidArgs(`${arg.startsWith('-') ? 'unknown option' : 'unexpected argument'}: ${arg}`)
+        if (arg !== '--theme') continue
+
+        themeCount++
+        const value = argv[++i]
+        if (!value || value.startsWith('-')) invalidArgs('--theme requires a theme name')
+    }
+
+    if (themeCount > 1) invalidArgs('--theme may only be specified once')
+
+    const modes = ['--standalone', '--mastodon', '--mastodon46'].filter(option => argv.includes(option))
+    if (modes.length > 1) invalidArgs('choose only one output mode')
+
+    const standalone = argv.includes('--standalone')
+    const all = argv.includes('--all')
+    const themeIndex = argv.indexOf('--theme')
+    const theme = themeIndex === -1 ? null : argv[themeIndex + 1]
+
+    if (theme && !standalone) invalidArgs('--theme requires --standalone')
+    if (all && !standalone) invalidArgs('--all requires --standalone')
+    if (all && theme) invalidArgs('--all cannot be combined with --theme')
+    if (theme && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(theme)) invalidArgs(`invalid theme name: ${theme}`)
+}
+
+validateArgs(args)
+
 const isStandalone = args.includes('--standalone')
 const isMastodon = args.includes('--mastodon')
 const isMastodon46 = args.includes('--mastodon46')
