@@ -1,3 +1,8 @@
+<!-- repo-hero -->
+<a href="https://handfish.noisefactor.io/"><img src="docs/hero.jpg" alt="Handfish for Mastodon Custom Mastodon themes" width="100%"></a>
+
+<sub>Open source from <a href="https://noisefactor.io">Noise Factor</a> &middot; <a href="https://github.com/noisefactorllc">more projects</a></sub>
+
 # Handfish for Mastodon
 
 The [Handfish](https://handfish.noisefactor.io) design system as Mastodon themes.
