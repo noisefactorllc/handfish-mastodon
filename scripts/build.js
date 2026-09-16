@@ -609,9 +609,11 @@ function paletteIsDark(resolved) {
     return l === null || l < 50
 }
 
-// Every token (and the color-scheme property) that Mastodon 4.6 defines only
-// under [data-color-scheme='light'|'dark'] (theme/_dark.scss, _light.scss @
-// v4.6.2 — re-audit on upgrade). Two failure modes without these: with the
+// Every token (and the color-scheme property) that Mastodon defines only
+// under [data-color-scheme='light'|'dark'] (tokens/theme/_dark.scss,
+// _light.scss @ v4.7.2 — re-audit on upgrade; 4.7 moved this tree from
+// styles/mastodon/theme/ to styles/mastodon/tokens/theme/). Two failure modes
+// without these: with the
 // html attribute stuck at 'auto' (e.g. a proxy CSP blocking Mastodon's inline
 // theme-selection script) they are undefined outright — .modal-root__overlay's
 // `background: var(--color-bg-overlay)` computes to transparent and confirm
@@ -626,14 +628,16 @@ function paletteIsDark(resolved) {
 // chains to tokens we already bind (so Handfish hues flow through), and
 // bright semantic bases pick readable on-colors from their resolved
 // lightness at build time rather than assuming stock's white-on-dark scale.
-// Residual at v4.6.2, deliberately NOT locked here (re-audit on upgrade):
-// three attribute-gated style rules outside theme/ — the empty-state
+// Residual at v4.7.2, deliberately NOT locked here (re-audit on upgrade):
+// three attribute-gated style rules outside the token tree — the empty-state
 // illustration's internal SVG vars ([data-color-scheme='dark'] .empty-state
 // svg in admin.scss plus the hash-mangled .defaultImage CSS module) and two
 // dark-only borders (account_header/account_timeline modules) — and the
 // asset pipeline's light-dark() polyfill space toggles
-// (--lightningcss-light/dark), which have zero consumers at 4.6.2 but would
-// follow the attribute if upstream starts using light-dark().
+// (--lightningcss-light/dark), which have zero consumers at 4.7.2 but would
+// follow the attribute if upstream starts using light-dark(). That residual
+// set is unchanged between 4.6.8 and 4.7.2: same five files carry
+// data-color-scheme, only the token tree's path moved.
 function schemeGatedDecls(resolved, isDark) {
     // Text on a bg-*-base chip: stock assumes its scale bases are dark enough
     // for white; Handfish accents can be bright (e.g. yellow at L 89%).
@@ -651,6 +655,20 @@ function schemeGatedDecls(resolved, isDark) {
             ? 'rgb(from var(--color-white) r g b / 5%)'
             : 'rgb(from var(--color-grey-950) r g b / 5%)',
         '--overlay-strength-secondary': '4%',
+        // Added in 4.7 (#39786), scheme-gated like the rest of this family, so
+        // they need the same palette lock. Stock's tint pair is an alpha wash
+        // of black (dark) or of its own text color (light); bg-overlay and
+        // bg-overlay-highlight are now legacy aliases of them upstream, and we
+        // keep binding those directly above. border-strong is stock's
+        // grey-100/grey-950 — the same value its text-primary takes in each
+        // scheme — so chaining ours lets the Handfish hue flow through.
+        '--color-bg-blend': isDark
+            ? 'rgb(from var(--color-black) r g b / 30%)'
+            : 'rgb(from var(--color-text-primary) r g b / 4%)',
+        '--color-bg-highlight': isDark
+            ? 'rgb(from var(--color-text-primary) r g b / 5%)'
+            : 'rgb(from var(--color-text-primary) r g b / 4%)',
+        '--color-border-strong': 'var(--color-text-primary)',
         // Shadows: stock strength is the only per-scheme piece; heavier over
         // dark palettes, lighter over light ones, exactly as stock intends.
         '--shadow-strength-primary': isDark ? '80%' : '30%',
