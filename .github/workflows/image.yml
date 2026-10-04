@@ -21,6 +21,9 @@ on:
         default: '1'
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   image:
     runs-on: ubuntu-latest
