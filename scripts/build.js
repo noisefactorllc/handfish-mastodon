@@ -218,6 +218,18 @@ async function buildStandalone(theme = null) {
         }
         if (fs.existsSync(themePath)) {
             themeCSS = fs.readFileSync(themePath, 'utf8')
+            // A variants file whose selectors do not include the requested name
+            // (e.g. `--theme gray` against gray.css, which only defines
+            // [data-theme="gray-dark"] / [data-theme="gray-light"]) would build
+            // with base tokens after the variant-stripping pass below removes
+            // every block — silently, with exit 0. Fail loudly instead. Files
+            // without [data-theme] blocks apply as-is (filename-based themes).
+            const variants = [...themeCSS.matchAll(/\[data-theme="([^"]+)"\]/g)].map(m => m[1])
+            if (variants.length > 0 && !variants.includes(theme)) {
+                console.error(`Handfish theme not found for: ${theme}`)
+                console.error(`themes/${path.basename(themePath)} defines: ${variants.join(', ')}`)
+                process.exit(1)
+            }
         }
 
         // Fall back to tokens.css for base dark/light variants
