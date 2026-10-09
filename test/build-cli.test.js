@@ -114,7 +114,7 @@ const distDir = path.join(repoRoot, 'dist')
 
 test.after(() => {
     fs.rmSync(handfishFixture, { recursive: true, force: true })
-    for (const file of ['handfish-mastodon-standalone-pair.css', 'handfish-mastodon-standalone-pair.min.css', 'handfish-mastodon-standalone-pair-dark.css', 'handfish-mastodon-standalone-pair-dark.min.css']) {
+    for (const file of ['handfish-mastodon-standalone.css', 'handfish-mastodon-standalone.min.css', 'handfish-mastodon-standalone-pair.css', 'handfish-mastodon-standalone-pair.min.css', 'handfish-mastodon-standalone-pair-dark.css', 'handfish-mastodon-standalone-pair-dark.min.css', 'handfish-mastodon-standalone-pair-light.css', 'handfish-mastodon-standalone-pair-light.min.css']) {
         fs.rmSync(path.join(distDir, file), { force: true })
     }
 })
@@ -145,4 +145,33 @@ test('build CLI still unwraps a requested variant from its pair file', () => {
     assert.match(output, /--hf-color-1:\s*oklch\(30% 0 0\)/)
     assert.doesNotMatch(output, /\[data-theme="pair-dark"\]/)
     assert.doesNotMatch(output, /\[data-theme="pair-light"\]/)
+})
+
+test('build CLI keeps the OS-dark icon block in the auto standalone build', () => {
+    const result = spawnSync(process.execPath, [buildScript, '--standalone'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, HANDFISH_DIR: handfishFixture },
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    const output = fs.readFileSync(path.join(distDir, 'handfish-mastodon-standalone.css'), 'utf8')
+    assert.match(output, /@media \(prefers-color-scheme: dark\)/)
+    assert.match(output, /--icon-reply:/)
+})
+
+test('build CLI drops the OS-dark icon block for an explicit light theme', () => {
+    const result = spawnSync(process.execPath, [buildScript, '--standalone', '--theme', 'pair-light'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, HANDFISH_DIR: handfishFixture },
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    const output = fs.readFileSync(path.join(distDir, 'handfish-mastodon-standalone-pair-light.css'), 'utf8')
+    // The OS-dark block forces white icon fills; under an explicit light theme
+    // it would render white icons on a light background whenever the OS scheme
+    // is dark. An explicit theme keeps one icon set under every OS scheme.
+    assert.doesNotMatch(output, /prefers-color-scheme/)
+    assert.match(output, /--icon-reply:/)
 })

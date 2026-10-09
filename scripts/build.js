@@ -261,8 +261,23 @@ async function buildStandalone(theme = null) {
     // Append handfish-mastodon source files (fonts first, overrides LAST so they win over base)
     for (const file of ['fonts.css', 'mapping.css', 'icons.css', 'base.css', 'overrides.css']) {
         let content = fs.readFileSync(path.join(srcDir, file), 'utf8')
-        if (file === 'icons.css' && themeColors.accent) {
-            content = recolorIcons(content, themeColors)
+        if (file === 'icons.css') {
+            if (theme) {
+                // icons.css's @media (prefers-color-scheme: dark) block exists
+                // only to serve the auto build's light/dark flip (plain icons
+                // flip to white under an OS dark scheme). An explicit theme
+                // applies regardless of the OS scheme, and its recolored base
+                // icons already suit the theme's own palette — keeping the
+                // block made an explicit LIGHT theme render white icons on a
+                // light background whenever the OS scheme was dark. Strip it
+                // so explicit-theme builds keep one icon set under every OS
+                // scheme. Matches one level of brace nesting, like
+                // stripMediaLight below.
+                content = content.replace(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{(?:[^{}]|\{[^{}]*\})*\}/g, '')
+            }
+            if (themeColors.accent) {
+                content = recolorIcons(content, themeColors)
+            }
         }
         parts.push(content)
     }
