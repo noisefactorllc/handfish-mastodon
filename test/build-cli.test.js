@@ -85,6 +85,7 @@ function makeHandfishFixture() {
         ':root {',
         '    --hf-color-1: oklch(20% 0 0);',
         '    --hf-color-7: oklch(95% 0 0);',
+        '    --hf-accent-3: oklch(79.5% 0.103 264);',
         '}',
         '',
         '[data-theme="dark"] {',
@@ -93,12 +94,14 @@ function makeHandfishFixture() {
         '',
         '[data-theme="light"] {',
         '    --hf-color-1: oklch(97% 0 0);',
+        '    --hf-accent-3: oklch(40.6% 0.073 90);',
         '}',
         '',
     ].join('\n'))
     fs.writeFileSync(path.join(themesDir, 'pair.css'), [
         '[data-theme="pair-dark"] {',
         '    --hf-color-1: oklch(30% 0 0);',
+        '    --hf-accent-3: oklch(65% 0.25 145);',
         '}',
         '',
         '[data-theme="pair-light"] {',
@@ -174,4 +177,53 @@ test('build CLI drops the OS-dark icon block for an explicit light theme', () =>
     // is dark. An explicit theme keeps one icon set under every OS scheme.
     assert.doesNotMatch(output, /prefers-color-scheme/)
     assert.match(output, /--icon-reply:/)
+})
+
+// Icon recoloring must use the requested theme's own --hf-* values, not just
+// the token defaults. The fixture mirrors handfish's tokens.css: the :root
+// (dark-scheme) accent is oklch(79.5% 0.103 264) → 9abcff and the light
+// variant's is oklch(40.6% 0.073 90) → 594712; pair-dark's
+// oklch(65% 0.25 145) → 00b200. Same OKLCH→hex math as scripts/build.js.
+test('build CLI recolors base icons with the light-scheme accent in the auto build', () => {
+    const result = spawnSync(process.execPath, [buildScript, '--standalone'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, HANDFISH_DIR: handfishFixture },
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    const output = fs.readFileSync(path.join(distDir, 'handfish-mastodon-standalone.css'), 'utf8')
+    assert.match(output, /%23594712/)
+    assert.doesNotMatch(output, /%23f76902/i)
+})
+
+test('build CLI recolors the OS-dark media-block icons with the dark accent, not the light one', () => {
+    const result = spawnSync(process.execPath, [buildScript, '--standalone'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, HANDFISH_DIR: handfishFixture },
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    const output = fs.readFileSync(path.join(distDir, 'handfish-mastodon-standalone.css'), 'utf8')
+    // icons.css's e68933 accent icons exist only inside the
+    // @media (prefers-color-scheme: dark) block. Under the auto build they
+    // serve the dark scheme and must take tokens.css's :root (dark) accent —
+    // the last-match light accent would put dark olive icons on a dark
+    // background.
+    assert.match(output, /%239abcff/)
+})
+
+test('build CLI recolors icons with the explicit theme palette, not the defaults', () => {
+    const result = spawnSync(process.execPath, [buildScript, '--standalone', '--theme', 'pair-dark'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, HANDFISH_DIR: handfishFixture },
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    const output = fs.readFileSync(path.join(distDir, 'handfish-mastodon-standalone-pair-dark.css'), 'utf8')
+    assert.match(output, /%2300b200/)
+    assert.doesNotMatch(output, /%23594712/)
+    assert.doesNotMatch(output, /%23f76902/i)
 })

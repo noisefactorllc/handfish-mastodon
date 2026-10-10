@@ -139,7 +139,22 @@ function extractThemeColors(themeCSS, tokensCSS) {
     const textDark = parseOklch(merged['hf-color-7'] || '')  // bright text (for dark bg icons)
     const textLight = parseOklch(merged['hf-color-6'] || '') // normal text
 
-    return { accent, textDark, textLight }
+    // Dark-scheme accent: tokens.css's :root value. parseVars above keeps the
+    // LAST declaration in the file, which (like handfish's tokens.css) is the
+    // light variant's — right for the light-scheme base icons, wrong for the
+    // accent icons inside icons.css's OS-dark @media block. Strip the
+    // scheme-variant blocks and parse the :root defaults (the same approach
+    // resolveHandfishTokens uses) so the auto build can recolor the media
+    // block's icons with the dark accent.
+    const rootDefaults = parseVars(
+        tokensCSS
+            .replace(/@media\s*\(prefers-color-scheme:\s*light\)\s*\{(?:[^{}]|\{[^{}]*\})*\}/g, '')
+            .replace(/\[data-theme="[^"]+"\]\s*\{[^}]*\}/gs, '')
+            .replace(/@font-face\s*\{[^}]*\}/g, '')
+    )
+    const darkAccent = parseOklch(rootDefaults['hf-accent-3'] || '')
+
+    return { accent, textDark, textLight, darkAccent }
 }
 
 // Recolor icon SVG data URIs by replacing TangerineUI's hardcoded colors
@@ -148,7 +163,11 @@ function recolorIcons(iconsCSS, colors) {
     let result = iconsCSS
     // Replace accent orange variants with theme accent
     result = result.replace(/%23f76902/gi, `%23${colors.accent}`)
-    result = result.replace(/%23e68933/gi, `%23${colors.accent}`)
+    // e68933 exists only inside icons.css's OS-dark @media block, so under the
+    // auto build it serves the dark scheme and takes the dark-scheme accent.
+    // Explicit-theme builds strip that block before recoloring, leaving no
+    // e68933 — the fallback keeps them on the theme accent either way.
+    result = result.replace(/%23e68933/gi, `%23${colors.darkAccent || colors.accent}`)
     result = result.replace(/%23ff4013/gi, `%23${colors.accent}`) // boost active
     // Replace dark text color with theme text
     if (colors.textLight) {
