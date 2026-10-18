@@ -10,11 +10,11 @@ Deploy Handfish for Mastodon themes to Docker-based Mastodon instances so users 
 
 **Target instances:** yip.yip.yip.yip.yip.computer (testbed), genart.social
 
-Both run `tootsuite/mastodon:v4.5.7` via Docker Compose. See scaffold runbook for connection details.
+Both run `tootsuite/mastodon:v4.5.7` via Docker Compose.
 
 ## Prerequisites
 
-- SSH access to the target server (see scaffold runbook)
+- SSH access to the target server
 - Node.js 18+ and npm (local machine or CI)
 - The `handfish` repo checked out at `../handfish` relative to this repo
 - Docker on the target server
