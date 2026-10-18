@@ -1,12 +1,12 @@
 name: Image
 
 # Builds the Mastodon + Handfish container image on an amd64 runner and pushes
-# it to registry.noisefactor.io.
+# it to the image registry named by the REGISTRY_HOST secret.
 #
 # This exists so the image is NEVER built on a workstation or on a production
 # server. Runners are amd64, so this is also faster than an emulated local
 # build. Delivery to the (deliberately non-registry-authed) Mastodon hosts is a
-# separate server-side step — see docs/runbook/mastodon-upgrades.md in scaffold.
+# separate server-side step.
 
 on:
   workflow_dispatch:
@@ -81,20 +81,26 @@ jobs:
                       /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
           df -h /
 
-      - name: Log in to registry.noisefactor.io
+      # An empty host would make docker login fall back to Docker Hub, so a
+      # missing REGISTRY_HOST secret stops the job before any credential is sent.
+      - name: Log in to the image registry
+        env:
+          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
         run: |
+          [ -n "$REGISTRY_HOST" ] || { echo "::error::REGISTRY_HOST secret is not set"; exit 1; }
           echo "${{ secrets.REGISTRY_PASS }}" \
-            | docker login registry.noisefactor.io \
+            | docker login "$REGISTRY_HOST" \
                 -u "${{ secrets.REGISTRY_USER }}" --password-stdin
 
       - name: Build
         id: build
         env:
+          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
           MASTODON_VERSION: ${{ inputs.mastodon_version }}
           IMAGE_REVISION: ${{ inputs.image_revision }}
         run: |
           set -euo pipefail
-          TAG="registry.noisefactor.io/mastodon-handfish:${MASTODON_VERSION}-${IMAGE_REVISION}"
+          TAG="${REGISTRY_HOST}/mastodon-handfish:${MASTODON_VERSION}-${IMAGE_REVISION}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           docker build \
             --build-arg "MASTODON_VERSION=${MASTODON_VERSION}" \
