@@ -15,3 +15,16 @@ dpkg --compare-versions "$version" ge "$floor" || {
     exit 1
 }
 printf 'libbrotli1: %s (fixed floor: %s)\n' "$version" "$floor"
+
+node -e '
+const version = process.versions.node
+const floors = { 22: [23, 4], 24: [22, 1], 26: [12, 1] }
+const parts = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.exec(version)
+const [major, minor, patch] = parts ? parts.slice(1).map(Number) : []
+const floor = floors[major]
+if (!floor || minor < floor[0] || (minor === floor[0] && patch < floor[1])) {
+    console.error("Node.js " + version + " does not meet a verified CVE-2026-111497 fixed floor")
+    process.exit(1)
+}
+console.log("Node.js: " + version + " (fixed floor: " + major + "." + floor.join(".") + ")")
+'
