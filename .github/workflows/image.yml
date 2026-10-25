@@ -120,6 +120,8 @@ jobs:
           echo "arch: $arch"
           [ "$arch" = "linux/amd64" ] || { echo "::error::expected linux/amd64"; exit 1; }
 
+          docker run --rm -i --entrypoint sh "$TAG" < scripts/check-brotli.sh
+
           version=$(docker run --rm --entrypoint ruby "$TAG" \
             -e 'require "/opt/mastodon/lib/mastodon/version"; puts Mastodon::Version.to_a.join(".")')
           echo "mastodon version: $version"

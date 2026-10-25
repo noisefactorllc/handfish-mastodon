@@ -856,6 +856,9 @@ ARG MASTODON_VERSION=v4.6.0
 FROM node:22-slim AS node
 FROM tootsuite/mastodon:\${MASTODON_VERSION}
 USER root
+RUN apt-get update \\
+  && apt-get install -y --no-install-recommends --only-upgrade libbrotli1 \\
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=node /usr/local/bin/node /usr/local/bin/
 COPY --from=node /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \\

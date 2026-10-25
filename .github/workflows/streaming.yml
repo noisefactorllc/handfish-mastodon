@@ -28,6 +28,8 @@ jobs:
   image:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
       - name: Check out upstream Mastodon
         env:
           MASTODON_VERSION: ${{ inputs.mastodon_version }}
@@ -59,6 +61,14 @@ jobs:
           [[ "$IMAGE_REVISION" =~ ^[0-9]+$ ]] || { echo "::error::image_revision must be a number"; exit 1; }
           TAG="${REGISTRY_HOST}/mastodon-streaming:${MASTODON_VERSION}-${IMAGE_REVISION}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          cat >> upstream/streaming/Dockerfile <<'DOCKERFILE'
+
+          USER root
+          RUN apt-get update \
+            && apt-get install -y --no-install-recommends --only-upgrade libbrotli1 \
+            && rm -rf /var/lib/apt/lists/*
+          USER mastodon
+          DOCKERFILE
           docker build --pull -f upstream/streaming/Dockerfile -t "$TAG" upstream
 
       - name: Verify image
@@ -71,6 +81,8 @@ jobs:
           arch=$(docker image inspect "$TAG" --format '{{.Os}}/{{.Architecture}}')
           echo "arch: $arch"
           [ "$arch" = "linux/amd64" ] || { echo "::error::expected linux/amd64"; exit 1; }
+
+          docker run --rm -i --entrypoint sh "$TAG" < scripts/check-brotli.sh
 
           node=$(docker run --rm --entrypoint node "$TAG" --version)
           echo "node: $node"

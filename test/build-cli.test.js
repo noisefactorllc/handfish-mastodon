@@ -115,6 +115,30 @@ function makeHandfishFixture() {
 const handfishFixture = makeHandfishFixture()
 const distDir = path.join(repoRoot, 'dist')
 
+test('Mastodon image build upgrades the existing Brotli package before compiling assets', () => {
+    const context = path.join(distDir, 'mastodon46')
+    const files = () => fs.existsSync(context) ? fs.readdirSync(context, { recursive: true })
+        .map(file => path.join(context, file)).filter(file => fs.statSync(file).isFile()) : []
+    const previous = new Map(files().map(file => [file, fs.readFileSync(file)]))
+    try {
+        const result = spawnSync(process.execPath, [buildScript, '--mastodon46'], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: { ...process.env, HANDFISH_DIR: handfishFixture },
+        })
+        assert.equal(result.status, 0, result.stderr)
+        const dockerfile = fs.readFileSync(path.join(context, 'Dockerfile'), 'utf8')
+        assert.match(dockerfile, /apt-get install -y --no-install-recommends --only-upgrade libbrotli1/)
+        assert.ok(dockerfile.indexOf('--only-upgrade libbrotli1') < dockerfile.indexOf('RUN yarn install'))
+        assert.match(dockerfile, /USER mastodon\n$/)
+    } finally {
+        for (const file of files()) {
+            if (previous.has(file)) fs.writeFileSync(file, previous.get(file))
+            else fs.rmSync(file)
+        }
+    }
+})
+
 test.after(() => {
     fs.rmSync(handfishFixture, { recursive: true, force: true })
     for (const file of ['handfish-mastodon-standalone.css', 'handfish-mastodon-standalone.min.css', 'handfish-mastodon-standalone-pair.css', 'handfish-mastodon-standalone-pair.min.css', 'handfish-mastodon-standalone-pair-dark.css', 'handfish-mastodon-standalone-pair-dark.min.css', 'handfish-mastodon-standalone-pair-light.css', 'handfish-mastodon-standalone-pair-light.min.css']) {
