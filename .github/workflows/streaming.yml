@@ -2,7 +2,8 @@ name: Streaming image
 
 # Builds Mastodon's streaming server from the upstream tag, with upstream's own
 # streaming/Dockerfile, on the node base image current at build time, and
-# pushes it to the image registry named by the REGISTRY_HOST secret.
+# verifies it. It holds no credentials and publishes nothing; release images
+# are built and published outside this repository.
 #
 # Upstream's published mastodon-streaming tags keep the Node release they were
 # built with, so a Node security release does not reach them until upstream
@@ -39,27 +40,15 @@ jobs:
           git clone --quiet --depth 1 --branch "$MASTODON_VERSION" https://github.com/mastodon/mastodon.git upstream
           echo "upstream commit: $(git -C upstream rev-parse HEAD)"
 
-      # An empty host would make docker login fall back to Docker Hub, so a
-      # missing REGISTRY_HOST secret stops the job before any credential is sent.
-      - name: Log in to the image registry
-        env:
-          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
-        run: |
-          [ -n "$REGISTRY_HOST" ] || { echo "::error::REGISTRY_HOST secret is not set"; exit 1; }
-          echo "${{ secrets.REGISTRY_PASS }}" \
-            | docker login "$REGISTRY_HOST" \
-                -u "${{ secrets.REGISTRY_USER }}" --password-stdin
-
       - name: Build
         id: build
         env:
-          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
           MASTODON_VERSION: ${{ inputs.mastodon_version }}
           IMAGE_REVISION: ${{ inputs.image_revision }}
         run: |
           set -euo pipefail
           [[ "$IMAGE_REVISION" =~ ^[0-9]+$ ]] || { echo "::error::image_revision must be a number"; exit 1; }
-          TAG="${REGISTRY_HOST}/mastodon-streaming:${MASTODON_VERSION}-${IMAGE_REVISION}"
+          TAG="mastodon-streaming:${MASTODON_VERSION}-${IMAGE_REVISION}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           cat >> upstream/streaming/Dockerfile <<'DOCKERFILE'
 
@@ -100,6 +89,3 @@ jobs:
             echo "| upstream Mastodon | \`$MASTODON_VERSION\` |"
             echo "| node | \`$node\` |"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Push
-        run: docker push "${{ steps.build.outputs.tag }}"

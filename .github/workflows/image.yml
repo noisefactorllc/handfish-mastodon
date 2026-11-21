@@ -1,12 +1,12 @@
 name: Image
 
-# Builds the Mastodon + Handfish container image on an amd64 runner and pushes
-# it to the image registry named by the REGISTRY_HOST secret.
+# Builds the Mastodon + Handfish container image on an amd64 runner and
+# verifies it, for theme work. It holds no credentials and publishes nothing;
+# release images are built and published outside this repository.
 #
 # This exists so the image is NEVER built on a workstation or on a production
 # server. Runners are amd64, so this is also faster than an emulated local
-# build. Delivery to the (deliberately non-registry-authed) Mastodon hosts is a
-# separate server-side step.
+# build.
 
 on:
   workflow_dispatch:
@@ -81,26 +81,14 @@ jobs:
                       /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
           df -h /
 
-      # An empty host would make docker login fall back to Docker Hub, so a
-      # missing REGISTRY_HOST secret stops the job before any credential is sent.
-      - name: Log in to the image registry
-        env:
-          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
-        run: |
-          [ -n "$REGISTRY_HOST" ] || { echo "::error::REGISTRY_HOST secret is not set"; exit 1; }
-          echo "${{ secrets.REGISTRY_PASS }}" \
-            | docker login "$REGISTRY_HOST" \
-                -u "${{ secrets.REGISTRY_USER }}" --password-stdin
-
       - name: Build
         id: build
         env:
-          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
           MASTODON_VERSION: ${{ inputs.mastodon_version }}
           IMAGE_REVISION: ${{ inputs.image_revision }}
         run: |
           set -euo pipefail
-          TAG="${REGISTRY_HOST}/mastodon-handfish:${MASTODON_VERSION}-${IMAGE_REVISION}"
+          TAG="mastodon-handfish:${MASTODON_VERSION}-${IMAGE_REVISION}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           docker build --pull \
             --build-arg "MASTODON_VERSION=${MASTODON_VERSION}" \
@@ -163,6 +151,3 @@ jobs:
             echo ""
             echo "The digest **must** match the \`sha256-…\` already in the hosts' nginx CSP \`script-src\`, or \`data-color-scheme\` sticks at \`auto\`."
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Push
-        run: docker push "${{ steps.build.outputs.tag }}"

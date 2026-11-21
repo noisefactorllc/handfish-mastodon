@@ -63,11 +63,12 @@ test('image gate rejects a Node executable that cannot run', () => {
 })
 
 for (const workflow of ['image.yml', 'streaming.yml']) {
-    test(`${workflow} verifies Brotli before publication`, () => {
+    test(`${workflow} verifies Brotli in the image it builds`, () => {
         const source = fs.readFileSync(path.join(root, '.github', 'workflows', workflow), 'utf8')
         const gate = source.indexOf('< scripts/check-brotli.sh')
         assert.ok(gate > 0, 'image must run the package gate')
-        assert.ok(gate < source.indexOf('- name: Push'))
+        const build = source.indexOf('docker build --pull')
+        assert.ok(build > 0 && build < gate, 'the gate must run on the image the workflow builds')
         if (workflow === 'streaming.yml') {
             assert.match(source, /apt-get install -y --no-install-recommends --only-upgrade libbrotli1/)
             assert.match(source, /USER mastodon\n\s+DOCKERFILE/)
